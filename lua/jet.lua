@@ -1,52 +1,60 @@
 local M = {}
 
-local root_folder = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])"):sub(1, -2):match("(.*[/\\])")
+local lspconfig = require("lspconfig")
 
-local command = root_folder .. "scripts/jet"
+local cmd = {
+  'julia',
+  '--startup-file=no',
+  '--history-file=no',
+  '-e',
+  [[
+    # Load JETLS.jl: attempt to load from ~/.julia/environments/nvim-jetls
+    # with the regular load path as a fallback
+    jet_install_path = joinpath(
+        get(DEPOT_PATH, 1, joinpath(homedir(), ".julia")),
+        "environments", "nvim-jetls"
+    )
+    pushfirst!(LOAD_PATH, jet_install_path)
+    using JETLS
+    popfirst!(LOAD_PATH)
+    # depot_path = get(ENV, "JULIA_DEPOT_PATH", "")
+    project_path = let
+        dirname(something(
+            ## 1. Finds an explicitly set project (JULIA_PROJECT)
+            Base.load_path_expand((
+                p = get(ENV, "JULIA_PROJECT", nothing);
+                p === nothing ? nothing : isempty(p) ? nothing : p
+            )),
+            ## 2. Look for a Project.toml file in the current working directory,
+            ##    or parent directories, with $HOME as an upper boundary
+            Base.current_project(),
+            ## 3. First entry in the load path
+            get(Base.load_path(), 1, nothing),
+            ## 4. Fallback to default global environment,
+            ##    this is more or less unreachable
+            Base.load_path_expand("@v#.#"),
+        ))
+    end
+    pushfirst!(LOAD_PATH, project_path) # ???
+    @info "Running JETLS language server" VERSION pwd() project_path
+    runserver(stdin, stdout)
+  ]],
+}
+
+local jetls = {
+  default_config = {
+    cmd = cmd,
+    filetypes = {'julia'},
+  },
+  docs = {
+    description = [[
+TBW
+    ]],
+  },
+}
 
 function M.setup(opts)
-  opts = opts or {}
-  timeout = opts.timeout or 20000
-  setup_lspconfig = opts.setup_lspconfig or true
-  local null_ls = require("null-ls")
-  local helpers = require("null-ls.helpers")
-  local builtins = null_ls.builtins
-  local generator = null_ls.generator
-
-  local jet_julia = {
-    method = null_ls.methods.DIAGNOSTICS,
-    filetypes = { "julia" },
-    generator = null_ls.generator({
-      command = command,
-      to_stdin = true,
-      from_stderr = true,
-      timeout = timeout,
-      format = "line",
-      check_exit_code = function(code)
-        return code <= 1
-      end,
-      args = { "$FILENAME" },
-      on_output = helpers.diagnostics.from_patterns({
-        {
-          pattern = [[(%d+):([EIW]):(.*)]],
-          groups = { "row", "severity", "message" },
-          overrides = {
-            severities = {
-              E = helpers.diagnostics.severities["error"],
-              W = helpers.diagnostics.severities["warning"],
-              I = helpers.diagnostics.severities["information"],
-            },
-          },
-        },
-      }),
-    }),
-  }
-
-  null_ls.register(jet_julia)
-
-  if setup_lspconfig then
-    require("lspconfig")["null-ls"].setup({})
-  end
+    lspconfig.configs['jetls'] = jetls
 end
 
 return M
