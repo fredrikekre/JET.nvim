@@ -15,7 +15,7 @@ local cmd = {
         "environments", "nvim-jetls"
     )
     pushfirst!(LOAD_PATH, jet_install_path)
-    using JETLS
+    import JETLS
     popfirst!(LOAD_PATH)
     # depot_path = get(ENV, "JULIA_DEPOT_PATH", "")
     project_path = let
@@ -37,7 +37,7 @@ local cmd = {
     end
     pushfirst!(LOAD_PATH, project_path) # ???
     @info "Running JETLS language server" VERSION pwd() project_path
-    runserver(stdin, stdout)
+    JETLS.runserver(stdin, stdout)
   ]],
 }
 
@@ -45,6 +45,11 @@ local jetls = {
   default_config = {
     cmd = cmd,
     filetypes = {'julia'},
+    root_dir = function(fname)
+      local util = require'lspconfig.util'
+      return util.root_pattern 'Project.toml'(fname) or util.find_git_ancestor(fname) or
+             util.path.dirname(fname)
+    end,
   },
   docs = {
     description = [[
@@ -54,7 +59,9 @@ TBW
 }
 
 function M.setup(opts)
-    lspconfig.configs['jetls'] = jetls
+    local lspconfigs = require("lspconfig.configs")
+    lspconfigs['jetls'] = jetls
+    lspconfig.jetls.setup({})
 end
 
 return M
